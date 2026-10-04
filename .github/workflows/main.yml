@@ -1,0 +1,46 @@
+name: Build APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate project
+        working-directory: .
+        run: |
+          set -e
+          PKG=$(find . -name package.json -not -path '*/node_modules/*' | head -1)
+          if [ -z "$PKG" ]; then
+            ZIP=$(find . -name '*.zip' | head -1)
+            if [ -z "$ZIP" ]; then echo "No package.json and no zip found"; ls -R | head -50; exit 1; fi
+            mkdir unz && unzip -q "$ZIP" -d unz
+            PKG=$(find unz -name package.json -not -path '*/node_modules/*' | head -1)
+          fi
+          DIR=$(dirname "$PKG")
+          echo "Project found in: $DIR"
+          mkdir app
+          rsync -a --exclude .git --exclude app --exclude unz "$DIR"/ app/
+          ls app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm install
+      - run: npm run build
+      - run: npx cap add android
+      - run: npx capacitor-assets generate --android
+      - run: npx cap sync android
+      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-books-apk
+          path: app/android/app/build/outputs/apk/debug/app-debug.apk
